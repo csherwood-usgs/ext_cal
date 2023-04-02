@@ -155,16 +155,89 @@ def distort_UV(U, V, intrinsics):
         return (Ud, Vd) 
 
 
-intrinsics = yaml2dict( '2021-02-25_CACO02_C1_IO.yml' )
-Ui = np.random.uniform(.001, .999, 100)*intrinsics['NU']
-Vi = np.random.uniform(0.001, .999, 100)*intrinsics['NV']
-U, V = undistort_UV(Ui, Vi, intrinsics)
-#print(U, V)
-Ud, Vd = distort_UV( U, V, intrinsics)
-madU = np.mean(np.abs(Ud-Ui))
-madV = np.mean(np.abs(Vd-Vi))
+def angle2R(azimuth, tilt, swing):
+    """Assembles and returns a rotation matrix R from azimuth, tilt, and swing (roll)
 
-print(madU, madV)
+    Notes:
+        - derived from angles2R.m by Costal Imaging Research Network and Oregon State University
+        - From p 612 of Wolf, 1983
+
+    Arguments:
+        azimuth (float): azimuth
+        tilt (float): tilt
+        swith (float): swing
+
+    Returns:
+        R (np.ndarray): Rotation matrix
+    """
+    a = azimuth
+    t = tilt
+    s = swing
+    R = np.zeros((3, 3))
+
+    R[0, 0] = np.cos(a) * np.cos(s) + np.sin(a) * np.cos(t) * np.sin(s)
+    R[0, 1] = -np.cos(s) * np.sin(a) + np.sin(s) * np.cos(t) * np.cos(a)
+    R[0, 2] = np.sin(s) * np.sin(t)
+
+    R[1, 0] = -np.sin(s) * np.cos(a) + np.cos(s) * np.cos(t) * np.sin(a)
+    R[1, 1] = np.sin(s) * np.sin(a) + np.cos(s) * np.cos(t) * np.cos(a)
+    R[1, 2] = np.cos(s) * np.sin(t)
+
+    R[2, 0] = np.sin(t) * np.sin(a)
+    R[2, 1] = np.sin(t) * np.cos(a)
+    R[2, 2] = -np.cos(t)
+
+    return R
+
+def assembleP( intrinsics, extrinsics ):
+
+    # K: intrinsic matrix, puts image in pixel units of the specific camera
+    # note...there is a sign difference in this matrix, compared with the Matlab version
+    K = np.array([
+        [intrinsics['fx'],               0., intrinsics['c0U']],
+         [0.,             -intrinsics['fy'], intrinsics['c0V']],
+         [0.,                            0.,                1.]
+         ])
+
+    # R: rotation matrix, puts image in camera orientation
+    R = angle2R(extrinsics['a'], extrinsics['t'], extrinsics['r'])
+
+    # I: identify matrix augmented by camera center, puts image in camera coordinates
+    IC = np.vstack((
+        np.eye(3),
+        -np.array([extrinsics['x'], extrinsics['y'], extrinsics['z']])
+    )).T
+
+    KR = np.matmul(K, R)
+    P = np.matmul(KR, IC)
+
+    # Make the matrix homogenous, methods use homogenous coordinates for easier math
+    # - normalize to make last element equal 1
+    P = P/P[-1, -1]
+
+    return P, K, R, IC
+    
+
+
+intrinsics = yaml2dict( '2021-02-25_CACO02_C1_IO.yml' )
+extrinsics = yaml2dict( '2021-03-17_CACO02_C1_EO.yml')
+P, K, R, IC = assembleP( intrinsics, extrinsics )
+print(R)
+print(K)
+print(IC)
+print(P)
+
+# check roundtrip from U, V to Ud, Vd, and back
+if False:
+    Ui = np.random.uniform(.001, .999, 100)*intrinsics['NU']
+    Vi = np.random.uniform(0.001, .999, 100)*intrinsics['NV']
+    U, V = undistort_UV(Ui, Vi, intrinsics)
+
+    Ud, Vd = distort_UV( U, V, intrinsics)
+    madU = np.mean(np.abs(Ud-Ui))
+    madV = np.mean(np.abs(Vd-Vi))
+
+    print(madU, madV)
 
 
 
